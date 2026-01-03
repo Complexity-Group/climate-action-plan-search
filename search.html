@@ -1,0 +1,221 @@
+<style>
+  /* Page layout */
+  #results {
+    max-width: 800px;
+    margin: 20px auto;
+  }
+
+  /* Search Input */
+  #searchInput {
+    width: 100%;
+    max-width: 700px;
+    padding: 18px 22px;
+    margin: 25px auto;
+    display: block;
+    font-size: 18px;
+    border-radius: 10px;
+    border: 1px solid #aaa;
+  }
+
+  /* Filter rows */
+  .filterBox {
+    max-width: 700px;
+    margin: 10px auto;
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .filterBox select {
+    width: 220px;
+    padding: 10px;
+    border-radius: 6px;
+    border: 1px solid #aaa;
+    font-size: 14px;
+    cursor: pointer;
+  }
+
+  /* Buttons */
+  .searchButton {
+    display: block;
+    margin: 20px auto 10px;
+    padding: 14px 36px;
+    background: #4A4A4A;
+    color: white;
+    font-size: 18px;
+    border: none;
+    border-radius: 12px;
+    cursor: pointer;
+  }
+
+  .clearButton {
+    display: block;
+    margin: 0 auto 25px;
+    padding: 10px 30px;
+    background: white;
+    color: #4A4A4A;
+    font-size: 16px;
+    border: 2px solid #4A4A4A;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+
+  /* Result Cards */
+  .resultItem {
+    background: #fafafa;
+    border-radius: 10px;
+    padding: 18px;
+    margin-bottom: 15px;
+    border: 1px solid #ddd;
+  }
+
+  .pdfLink {
+    color: #1e88e5;
+    font-weight: bold;
+    text-decoration: none;
+  }
+</style>
+
+<!-- Search -->
+<input
+  id="searchInput"
+  type="text"
+  placeholder="Search keywords (ex: wildfire heat urban)"
+>
+
+<!-- Filters row 1 -->
+<div class="filterBox">
+  <select id="stateFilter">
+    <option value="">Filter by State</option>
+  </select>
+
+  <select id="countryFilter">
+    <option value="">Filter by Country</option>
+  </select>
+
+  <select id="ecosystemFilter">
+    <option value="">Filter by Ecosystem</option>
+  </select>
+</div>
+
+<!-- Filters row 2 -->
+<div class="filterBox">
+  <select id="topicsFilter">
+    <option value="">Filter by Topic</option>
+  </select>
+</div>
+
+<button onclick="runSearch()" class="searchButton">Search</button>
+<button onclick="clearFilters()" class="clearButton">Clear</button>
+
+<div id="results"></div>
+
+<!-- PapaParse -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
+<script>
+const csvUrl =
+"https://docs.google.com/spreadsheets/d/e/2PACX-1vQWpu3UTDV3N7H6nSoZz8WKvNOlyOvs68csPa0yfGz5iekIOESFQKxakPDKXTkNLS6JyokAiFrMUeah/pub?gid=1929672315&single=true&output=csv";
+
+let database = [];
+
+Papa.parse(csvUrl, {
+  download: true,
+  header: true,
+  skipEmptyLines: true,
+  complete: results => {
+    database = results.data;
+    populateFilters();
+  }
+});
+
+function populateFilters() {
+  const states = new Set();
+  const countries = new Set();
+  const ecosystems = new Set();
+  const topics = new Set();
+
+  database.forEach(item => {
+    if (item["US State"]) states.add(item["US State"].trim());
+    if (item["Country"]) countries.add(item["Country"].trim());
+
+    ["Terrestrial Ecosystem", "Aquatic Ecosystem"].forEach(col => {
+      if (item[col]) {
+        item[col].split(",").forEach(e => ecosystems.add(e.trim()));
+      }
+    });
+
+    if (item["Topics"]) {
+      item["Topics"].split(",").forEach(t => topics.add(t.trim()));
+    }
+  });
+
+  fill("stateFilter", states);
+  fill("countryFilter", countries);
+  fill("ecosystemFilter", ecosystems);
+  fill("topicsFilter", topics);
+}
+
+function fill(id, values) {
+  const select = document.getElementById(id);
+  [...values].sort().forEach(v => {
+    const opt = document.createElement("option");
+    opt.value = v;
+    opt.textContent = v;
+    select.appendChild(opt);
+  });
+}
+
+function clearFilters() {
+  searchInput.value = "";
+  stateFilter.value = "";
+  countryFilter.value = "";
+  ecosystemFilter.value = "";
+  topicsFilter.value = "";
+  results.innerHTML = "";
+}
+
+function runSearch() {
+  const terms = searchInput.value.toLowerCase().split(/\s+/);
+  const state = stateFilter.value;
+  const country = countryFilter.value;
+  const eco = ecosystemFilter.value;
+  const topic = topicsFilter.value;
+
+  const filtered = database.filter(item => {
+    const text = Object.values(item).join(" ").toLowerCase();
+
+    if (terms[0] && !terms.every(t => text.includes(t))) return false;
+    if (state && item["US State"] !== state) return false;
+    if (country && item["Country"] !== country) return false;
+
+    if (eco) {
+      const ecoText =
+        ((item["Terrestrial Ecosystem"] || "") +
+         (item["Aquatic Ecosystem"] || "")).toLowerCase();
+      if (!ecoText.includes(eco.toLowerCase())) return false;
+    }
+
+    if (topic && !(item["Topics"] || "").includes(topic)) return false;
+    return true;
+  });
+
+  if (!filtered.length) {
+    results.innerHTML = "<p>No results found.</p>";
+    return;
+  }
+
+  results.innerHTML = filtered.map(item => `
+    <div class="resultItem">
+      <strong>${item["Plan Name"]}</strong><br>
+      <em>${item["City"] || ""} ${item["County"] || ""} ${item["US State"] || ""}</em><br><br>
+      <strong>Topics:</strong> ${item["Topics"] || "None"}<br>
+      <strong>Sectors:</strong> ${item["Sectors"] || "None"}<br><br>
+      <a class="pdfLink" href="${item["PDF Link"]}" target="_blank">
+        Open PDF →
+      </a>
+    </div>
+  `).join("");
+}
+</script>
